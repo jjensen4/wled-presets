@@ -1,0 +1,1493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WLED House Lights</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0 auto;
+      padding: 16px 16px 48px;
+      background: #111;
+      color: #eee;
+      max-width: 760px;
+    }
+    h1 { font-size: 1.45rem; margin: 0 0 12px; color: #ff8c00; }
+    h2 { font-size: 1rem; margin: 18px 0 8px; color: #ddd; font-weight: 650; }
+    button, input, select { font: inherit; }
+    .controls, .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    input[type="text"], input[type="search"], select {
+      padding: 10px 12px;
+      background: #1b1b1b;
+      border: 1px solid #3a3a3a;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 16px;
+    }
+    input[type="text"] { flex: 1; min-width: 160px; }
+    input[type="search"] { width: 100%; }
+    button.action, button.chip, .assign select {
+      background: #242424;
+      border: 1px solid #444;
+      border-radius: 8px;
+      color: #fff;
+      cursor: pointer;
+    }
+    button.action { padding: 10px 14px; }
+    button.action:active, button.chip:active { background: #333; }
+    .status, .sync {
+      margin: 10px 0;
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: #1b1b1b;
+      font-size: 0.92rem;
+      min-height: 20px;
+    }
+    .sync { color: #888; background: transparent; padding: 0; margin: 4px 0 0; min-height: 0; }
+    .status.ok { color: #7dcca2; }
+    .status.err { color: #ff8b80; }
+    .peek {
+      margin: 14px 0 8px;
+      padding: 12px;
+      background: #181818;
+      border: 1px solid #2c2c2c;
+      border-radius: 12px;
+    }
+    .peek-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .peek-head .row { margin-left: auto; flex-wrap: nowrap; }
+    .peek h2 { margin: 0; }
+    .peek-label {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin: 10px 0 4px;
+      color: #aaa;
+      font-size: 0.8rem;
+    }
+    .peek-canvas {
+      display: block;
+      width: 100%;
+      height: 14px;
+      background: #000;
+      border-radius: 6px;
+    }
+    .house-frame {
+      position: relative;
+      margin-top: 10px;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #f4f1ea;
+    }
+    #house-diagram {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: #f4f1ea;
+    }
+    #house-diagram[hidden] { display: none; }
+    #house-peek {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+    .hint { margin: 8px 0 0; color: #777; font-size: 0.78rem; line-height: 1.35; }
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #111;
+      padding: 8px 0 10px;
+      border-bottom: 1px solid #222;
+    }
+    .chips {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 10px 0 2px;
+      scrollbar-width: thin;
+    }
+    button.chip {
+      flex: 0 0 auto;
+      border-radius: 999px;
+      padding: 8px 12px;
+      color: #eee;
+    }
+    button.chip.active { background: #ff8c00; color: #1a0e00; border-color: #ff8c00; font-weight: 700; }
+    button.chip.add { border-style: dashed; color: #ffb25a; }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      display: inline-block; margin-right: 6px; vertical-align: middle;
+    }
+    .section-label { margin: 16px 0 4px; color: #bbb; font-size: 0.85rem; }
+    .card {
+      display: flex;
+      gap: 8px;
+      align-items: stretch;
+      margin: 8px 0;
+    }
+    button.apply {
+      flex: 1;
+      text-align: left;
+      padding: 12px 14px;
+      background: #1c1c1c;
+      border: 1px solid #333;
+      border-radius: 10px;
+      color: #fff;
+      cursor: pointer;
+      min-height: 72px;
+    }
+    button.apply:active { background: #262626; }
+    .card.live button.apply { border-color: #ff8c00; box-shadow: inset 0 0 0 1px #ff8c00; }
+    .card.success button.apply { border-color: #3d9a62; background: #16301f; }
+    .card.error button.apply { border-color: #c4564f; background: #3a1c1a; }
+    .name { display: block; font-size: 1.02rem; font-weight: 650; }
+    .meta, .flag { display: block; margin-top: 3px; color: #9a9a9a; font-size: 0.8rem; }
+    .flag { color: #ffb25a; }
+    .swatches { display: flex; gap: 4px; margin-bottom: 6px; min-height: 14px; }
+    .swatch {
+      width: 14px; height: 14px; border-radius: 3px;
+      border: 1px solid rgba(255,255,255,.28);
+    }
+    .assign {
+      width: 148px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 4px;
+      color: #999;
+      font-size: 0.75rem;
+    }
+    .assign select { width: 100%; padding: 8px; }
+    .card-side { width: 148px; display: flex; flex-direction: column; gap: 6px; }
+    .icon-row { display: flex; gap: 6px; }
+    .icon-row button {
+      flex: 1;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      background: #242424;
+      border: 1px solid #444;
+      border-radius: 8px;
+      color: #ddd;
+      cursor: pointer;
+      padding: 0;
+    }
+    .icon-row button:active { background: #333; }
+    .icon-row .delete-preset { color: #ffb4ab; }
+    .icon-row svg { width: 16px; height: 16px; }
+    .empty { color: #999; padding: 12px 0 4px; }
+    .look-form { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+    .look-form label { display: flex; flex-direction: column; gap: 4px; color: #999; font-size: 0.78rem; }
+    .look-form select, .look-form input[type="text"] { width: 100%; }
+    dialog {
+      width: min(440px, calc(100vw - 24px));
+      background: #1a1a1a;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 12px;
+      padding: 16px;
+    }
+    dialog::backdrop { background: rgba(0,0,0,.6); }
+    dialog h3 { margin: 0 0 8px; }
+    .group-form, .group-row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+    .group-form input[type="text"], .group-row input[type="text"] { flex: 1; }
+    input[type="color"] { width: 42px; height: 36px; padding: 0; border: none; background: transparent; }
+    .group-list { margin-top: 12px; }
+    .footer { margin-top: 28px; color: #666; font-size: 0.78rem; text-align: center; }
+    @media (max-width: 560px) {
+      .card { flex-direction: column; }
+      .assign, .card-side { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <h1>WLED House Lights</h1>
+
+  <div class="controls">
+    <input type="text" id="ip" value="192.168.68.76" placeholder="WLED IP" spellcheck="false" autocomplete="off">
+    <button class="action" id="test" type="button">Test</button>
+    <button class="action" id="reload" type="button">Reload</button>
+    <button class="action" id="backup" type="button">Backup</button>
+  </div>
+  <div id="status" class="status" aria-live="polite">Loading presets…</div>
+  <p id="sync" class="sync"></p>
+
+  <section class="peek" aria-label="Live roof preview">
+    <div class="peek-head">
+      <h2>Live on the house</h2>
+      <div class="row">
+        <button class="action" id="save-look" type="button">Save Preview</button>
+        <button class="action" id="house-toggle" type="button">Hide house</button>
+        <button class="action" id="peek-toggle" type="button">Pause</button>
+      </div>
+    </div>
+    <div class="house-frame" id="house-frame">
+      <img id="house-diagram" alt="House with the live roof lights" src="MyHouse.JPG">
+      <canvas id="house-peek"></canvas>
+    </div>
+    <div class="peek-label"><span>Preview</span><span>719 LEDs</span></div>
+    <canvas id="peek-top" class="peek-canvas" width="600" height="14"></canvas>
+    <p class="hint">The lights on the drawing follow the XLights roof lines. Preview is every LED in controller order. Only one Peek client can run at a time.</p>
+  </section>
+
+  <div class="toolbar">
+    <input id="search" type="search" placeholder="Search this group" autocomplete="off">
+    <div id="chips" class="chips"></div>
+  </div>
+  <h2 id="list-heading">Presets</h2>
+  <div id="list"></div>
+
+  <p class="footer">Tap a preset to send it to the house. Save Preview stores a new copy on this page, or replaces the preset you pick. The save icon on a card does the same for that card. Delete removes a controller preset from the device.</p>
+
+  <dialog id="look-dialog">
+    <h3 id="look-title">Copy preset</h3>
+    <p id="look-note" class="hint"></p>
+    <form id="look-form" class="look-form">
+      <label id="look-target-wrap">Save into
+        <select name="lookTarget" aria-label="Save into"></select>
+      </label>
+      <input type="text" name="lookName" required maxlength="40" placeholder="Name" autocomplete="off">
+      <select name="lookGroup" required aria-label="Group"></select>
+      <div class="row" style="justify-content:flex-end">
+        <button class="action" id="look-cancel" type="button">Cancel</button>
+        <button class="action" id="look-save" type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="groups-dialog">
+    <h3>Groups</h3>
+    <form id="new-group" class="group-form">
+      <input type="text" name="name" placeholder="New holiday or group" required maxlength="40">
+      <input type="color" name="color" value="#ff8c00" aria-label="Group color">
+      <button class="action" type="submit">Add</button>
+    </form>
+    <div id="group-editor" class="group-list"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:12px">
+      <button class="action" id="close-groups" type="button">Done</button>
+    </div>
+  </dialog>
+
+  <script>
+    const STORAGE_KEY = "wledHouse.library.v1";
+    const FILTER_KEY = "wledHouse.filter";
+    const NEW_COLORS = ["#ff8c00", "#e5484d", "#3dd68c", "#4c8dff", "#e08a2c", "#ff6b9d", "#d2a8ff", "#f3e6c8", "#7ee0d6", "#f5d90a"];
+    const GROUP_COLORS = {
+      Everyday: "#f3e6c8",
+      Halloween: "#ff8c00",
+      Christmas: "#e5484d",
+      Valentine: "#ff6b9d",
+      Easter: "#d2a8ff",
+      "St. Patrick": "#3dd68c",
+      Patriotic: "#4c8dff",
+      Autumn: "#e08a2c",
+      Pride: "#c084fc"
+    };
+
+    const PAGE_PRESETS = [
+      pagePreset("page:warm-white", "Solid Warm White", "Everyday", { on: true, bri: 180, transition: 7, mainseg: 0, seg: [seg([[255, 200, 120], [0, 0, 0], [0, 0, 0]], 0, 180)] }),
+      pagePreset("page:cool-white", "Solid Cool White", "Everyday", { on: true, bri: 180, transition: 7, mainseg: 0, seg: [seg([[220, 220, 255], [0, 0, 0], [0, 0, 0]], 0, 180)] }),
+      pagePreset("page:soft-amber", "Soft Amber", "Everyday", { on: true, bri: 160, transition: 10, mainseg: 0, seg: [seg([[255, 140, 40], [0, 0, 0], [0, 0, 0]], 0, 160)] }),
+      pagePreset("page:off", "Off", "Everyday", { on: false }),
+      pagePreset("page:halloween-classic", "Halloween Classic", "Halloween", { on: true, bri: 255, transition: 7, mainseg: 0, seg: [seg([[255, 100, 0], [100, 0, 180], [0, 0, 0]], 37, 255, 40, 128)] }),
+      pagePreset("page:halloween-eyes", "Halloween Eyes", "Halloween", { on: true, bri: 220, transition: 7, mainseg: 0, seg: [seg([[255, 80, 0], [0, 0, 0], [255, 0, 255]], 82, 220, 80, 140)] }),
+      pagePreset("page:orange-fire", "Orange Fire", "Halloween", { on: true, bri: 200, transition: 10, mainseg: 0, seg: [seg([[255, 60, 0], [80, 0, 0], [0, 0, 0]], 66, 200, 70, 180)] }),
+      pagePreset("page:purple-twinkle", "Purple Twinkle", "Halloween", { on: true, bri: 180, transition: 7, mainseg: 0, seg: [seg([[140, 0, 255], [0, 0, 0], [255, 100, 0]], 74, 180, 60, 160)] }),
+      pagePreset("page:lightning", "Lightning Storm", "Halloween", { on: true, bri: 255, transition: 5, mainseg: 0, seg: [seg([[255, 255, 255], [20, 20, 40], [0, 0, 0]], 57, 255, 120, 100)] }),
+      pagePreset("page:green-glow", "Spooky Green Glow", "Halloween", { on: true, bri: 160, transition: 15, mainseg: 0, seg: [seg([[0, 255, 40], [0, 40, 0], [0, 0, 0]], 2, 160, 30, 100)] }),
+      pagePreset("page:chase", "Orange Purple Chase", "Halloween", { on: true, bri: 230, transition: 7, mainseg: 0, seg: [seg([[255, 100, 0], [120, 0, 200], [0, 0, 0]], 28, 230, 90, 128)] }),
+      pagePreset("page:twinklefox", "Witching Hour Twinklefox", "Halloween", { on: true, bri: 190, transition: 10, mainseg: 0, seg: [seg([[255, 80, 0], [100, 0, 180], [0, 255, 50]], 80, 190, 50, 170)] }),
+      pagePreset("page:solid-orange", "Solid Halloween Orange", "Halloween", { on: true, bri: 200, transition: 7, mainseg: 0, seg: [seg([[255, 90, 0], [0, 0, 0], [0, 0, 0]], 0, 200)] }),
+      pagePreset("page:solid-purple", "Solid Halloween Purple", "Halloween", { on: true, bri: 180, transition: 7, mainseg: 0, seg: [seg([[140, 0, 220], [0, 0, 0], [0, 0, 0]], 0, 180)] })
+    ];
+
+    function seg(col, fx, bri, sx, ix) {
+      return {
+        id: 0, start: 0, stop: 719, len: 719, on: true, bri: bri == null ? 255 : bri,
+        col, fx, sx: sx == null ? 128 : sx, ix: ix == null ? 128 : ix, pal: 0, sel: true
+      };
+    }
+
+    function pagePreset(key, name, initialGroup, raw) {
+      return { key, source: "page", name, initialGroup, raw };
+    }
+
+    const ipInput = document.getElementById("ip");
+    const statusEl = document.getElementById("status");
+    const syncEl = document.getElementById("sync");
+    const chipsEl = document.getElementById("chips");
+    const listEl = document.getElementById("list");
+    const headingEl = document.getElementById("list-heading");
+    const searchEl = document.getElementById("search");
+    const dialog = document.getElementById("groups-dialog");
+    const editorEl = document.getElementById("group-editor");
+    const houseFrame = document.getElementById("house-frame");
+    const diagramImg = document.getElementById("house-diagram");
+    const houseCanvas = document.getElementById("house-peek");
+    const peekTop = document.getElementById("peek-top");
+
+    // xLights Halloween layout, preview 1280×720, background scaled to that box.
+    // WorldPos is one end of the line and X2/Y2 is the vector to the other end.
+    // Dir="R" puts the first LED at WorldPos+X2 (the right-hand end). Y is up.
+    // Photo is 667×396, stretched over the 1280×720 preview.
+    // The right eave is 10 photo pixels left of the xLights line.
+    // Both gable slopes are 5 photo pixels left of that line.
+    // The left slope is 5 photo pixels up. The right slope is 3 up.
+    const EAVE_NUDGE_X = -10 * 1280 / 667;
+    const GABLE_NUDGE_X = -5 * 1280 / 667;
+    const GABLE_NUDGE_Y = 5 * 720 / 396;
+    const RIGHT_SLOPE_NUDGE_Y = 3 * 720 / 396;
+    const HOUSE_SEGMENTS = [
+      { led: 0, count: 104, x: 996.8406, y: 333.1043, x2: 255.316528, y2: 2.925659, nudgeX: EAVE_NUDGE_X },
+      { led: 104, count: 70, x: 760.8759, y: 460.9576, x2: 220.922913, y2: -123.152740, nudgeX: GABLE_NUDGE_X, nudgeY: RIGHT_SLOPE_NUDGE_Y },
+      { led: 174, count: 70, x: 537.1328, y: 338.9930, x2: 213.402161, y2: 118.452271, nudgeX: GABLE_NUDGE_X, nudgeY: GABLE_NUDGE_Y },
+      { led: 244, count: 139, x: 288.0069, y: 334.0444, x2: 239.422058, y2: 0.256622 },
+      { led: 383, count: 138, x: 553.1144, y: 501.3817, x2: 439.885559, y2: 0.467560 },
+      { led: 521, count: 108, x: 308.1982, y: 498.7240, x2: 221.131836, y2: 0.401367 },
+      { led: 629, count: 33, x: 195.8773, y: 571.8891, x2: 98.710205, y2: -59.226135 },
+      { led: 662, count: 33, x: 79.1503, y: 516.6148, x2: 112.026566, y2: 55.274231 },
+      { led: 695, count: 24, x: 47.9777, y: 503.9230, x2: 58.052704, y2: 0.116302 }
+    ];
+
+    let devicePresets = {};
+    let effectNames = [];
+    let paletteNames = [];
+    let library = null;
+    let selectedFilter = null;
+    let currentPs = -1;
+    let pageLiveKey = null;
+    let uploadTimer = null;
+    let ws = null;
+    let wsIp = "";
+    let wsClosedByUs = false;
+    let peekWanted = true;
+    let latestColors = null;
+    let reconnectTimer = null;
+
+    function setStatus(msg, type) {
+      statusEl.textContent = msg;
+      statusEl.className = "status" + (type ? " " + type : "");
+    }
+
+    function host() {
+      let ip = ipInput.value.trim();
+      if (!ip.startsWith("http")) ip = "http://" + ip;
+      return ip.replace(/\/$/, "");
+    }
+
+    function esc(value) {
+      return String(value).replace(/[&<>"']/g, (ch) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[ch]));
+    }
+
+    function suggestGroup(name) {
+      const n = String(name).toLowerCase();
+      if (/hal+owe?en|flicker orange/.test(n)) return "Halloween";
+      if (/christmas|snowflake/.test(n)) return "Christmas";
+      if (/valentine/.test(n)) return "Valentine";
+      if (/easter/.test(n)) return "Easter";
+      if (/patty|patrick/.test(n)) return "St. Patrick";
+      if (/pride/.test(n)) return "Pride";
+      if (/autumn|\bfall\b/.test(n)) return "Autumn";
+      if (/red,\s*white|patriotic|july|flag/.test(n)) return "Patriotic";
+      if (/warm white|cool white|soft amber|^off$|turn off|security|spot light|\bwhite\b/.test(n)) return "Everyday";
+      return null;
+    }
+
+    function slug(lib, name) {
+      const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "group";
+      let id = base;
+      let n = 2;
+      while (lib.groups.some((group) => group.id === id)) {
+        id = base + "-" + n;
+        n += 1;
+      }
+      return id;
+    }
+
+    function ensureGroup(lib, name) {
+      const existing = lib.groups.find((group) => group.name.toLowerCase() === name.toLowerCase());
+      if (existing) return existing.id;
+      const id = slug(lib, name);
+      lib.groups.push({ id, name, color: GROUP_COLORS[name] || NEW_COLORS[lib.groups.length % NEW_COLORS.length] });
+      return id;
+    }
+
+    function isLibrary(value) {
+      return value && value.version === 1 && Array.isArray(value.groups) && value.assignments && typeof value.assignments === "object";
+    }
+
+    function normalizeLibrary(lib) {
+      if (!Array.isArray(lib.looks)) lib.looks = [];
+      if (!Array.isArray(lib.hidden)) lib.hidden = [];
+      return lib;
+    }
+
+    function readStored(text) {
+      if (!text) return null;
+      try {
+        const parsed = JSON.parse(text);
+        return isLibrary(parsed) ? normalizeLibrary(parsed) : null;
+      } catch (err) {
+        return null;
+      }
+    }
+
+    function activeSegs(raw) {
+      return (raw && Array.isArray(raw.seg) ? raw.seg : []).filter((segment) => segment && Number(segment.stop) > 0);
+    }
+
+    function colorsFrom(raw) {
+      const found = [];
+      const seen = new Set();
+      for (const segment of activeSegs(raw)) {
+        const cols = Array.isArray(segment.col) ? segment.col : [];
+        for (const color of cols) {
+          if (!Array.isArray(color) || color.length < 3) continue;
+          const r = color[0] | 0;
+          const g = color[1] | 0;
+          const b = color[2] | 0;
+          if (r === 0 && g === 0 && b === 0) continue;
+          const key = r + "," + g + "," + b;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          found.push(key);
+          if (found.length >= 4) return found;
+        }
+      }
+      return found.length ? found : ["28,28,28"];
+    }
+
+    function effectSummary(raw) {
+      if (raw && raw.playlist) return "Playlist";
+      const segs = activeSegs(raw);
+      if (raw && raw.on === false && !segs.length) return "Off";
+      const ids = [...new Set(segs.map((segment) => segment.fx).filter((id) => id != null))];
+      if (!ids.length) return "";
+      if (ids.length > 1) return "Mixed effects";
+      const name = effectNames[ids[0]];
+      return name ? String(name).split("@")[0] : "Effect " + ids[0];
+    }
+
+    function paletteSummary(raw) {
+      const pals = [...new Set(activeSegs(raw).map((segment) => segment.pal).filter((id) => typeof id === "number" && id > 0))];
+      if (pals.length !== 1) return "";
+      const name = paletteNames[pals[0]];
+      if (!name || name === "Default" || /^\*/.test(name)) return "";
+      return String(name);
+    }
+
+    function collectItems() {
+      const items = [];
+      const ids = Object.keys(devicePresets)
+        .filter((id) => /^\d+$/.test(id) && id !== "0")
+        .sort((a, b) => Number(a) - Number(b));
+      for (const id of ids) {
+        const raw = devicePresets[id];
+        if (!raw || typeof raw !== "object") continue;
+        if (raw.n == null && raw.seg == null && raw.playlist == null && raw.on == null) continue;
+        items.push({
+          key: "wled:" + id,
+          source: "controller",
+          slot: Number(id),
+          name: raw.n || ("Preset " + id),
+          raw
+        });
+      }
+      const hidden = new Set((library && library.hidden) || []);
+      const page = PAGE_PRESETS.filter((item) => !hidden.has(item.key));
+      const looks = ((library && library.looks) || []).filter((look) => look && look.key && look.raw).map((look) => ({
+        key: look.key,
+        source: "page",
+        saved: true,
+        name: look.name || "Saved look",
+        raw: look.raw
+      }));
+      return items.concat(page, looks);
+    }
+
+    function groupOf(item) {
+      const id = library && library.assignments[item.key];
+      if (!id || !library.groups.some((group) => group.id === id)) return null;
+      return library.groups.find((group) => group.id === id);
+    }
+
+    function matchesSearch(item) {
+      const query = searchEl.value.trim().toLowerCase();
+      if (!query) return true;
+      return item.name.toLowerCase().includes(query) || effectSummary(item.raw).toLowerCase().includes(query);
+    }
+
+    function buildDefaultLibrary(items) {
+      const lib = { version: 1, updatedAt: Date.now(), groups: [], assignments: {}, looks: [], hidden: [] };
+      for (const item of items) {
+        const name = item.initialGroup || suggestGroup(item.name);
+        if (!name) continue;
+        lib.assignments[item.key] = ensureGroup(lib, name);
+      }
+      const preferred = ["Everyday", "Halloween", "Christmas", "Autumn", "Valentine", "Easter", "St. Patrick", "Patriotic", "Pride"];
+      lib.groups.sort((a, b) => {
+        const ai = preferred.indexOf(a.name);
+        const bi = preferred.indexOf(b.name);
+        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+      });
+      return lib;
+    }
+
+    function pickNewer(local, remote) {
+      const valid = [local, remote].filter(isLibrary);
+      valid.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      return valid[0] || null;
+    }
+
+    async function fetchRemoteLibrary() {
+      try {
+        const res = await fetch(host() + "/wled-groups.json?t=" + Date.now(), { cache: "no-store" });
+        if (!res.ok) return null;
+        return readStored(await res.text());
+      } catch (err) {
+        return null;
+      }
+    }
+
+    async function uploadLibrary() {
+      try {
+        const blob = new Blob([JSON.stringify(library)], { type: "application/json" });
+        const body = new FormData();
+        body.append("data", blob, "wled-groups.json");
+        const res = await fetch(host() + "/upload", { method: "POST", body });
+        const text = await res.text();
+        if (!res.ok || !/uploaded/i.test(text)) throw new Error("upload failed");
+        syncEl.textContent = "Saved on the controller.";
+      } catch (err) {
+        syncEl.textContent = "Saved in this browser. The controller copy did not update.";
+      }
+    }
+
+    function saveLibrary(immediate) {
+      library.updatedAt = Date.now();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(library));
+      clearTimeout(uploadTimer);
+      if (immediate) return uploadLibrary();
+      uploadTimer = setTimeout(uploadLibrary, 400);
+      return Promise.resolve();
+    }
+
+    async function loadLibrary(items) {
+      const local = readStored(localStorage.getItem(STORAGE_KEY));
+      const remote = await fetchRemoteLibrary();
+      const chosen = pickNewer(local, remote);
+      if (chosen) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(chosen));
+        if (!remote || (chosen.updatedAt || 0) > (remote.updatedAt || 0)) {
+          library = chosen;
+          await saveLibrary(true);
+        }
+        return chosen;
+      }
+      const created = buildDefaultLibrary(items);
+      library = created;
+      await saveLibrary(true);
+      return created;
+    }
+
+    function initialFilter() {
+      const saved = localStorage.getItem(FILTER_KEY);
+      if (saved === "all" || saved === "ungrouped") return saved;
+      if (saved && library.groups.some((group) => group.id === saved)) return saved;
+      const seasonalName = {
+        1: "Valentine",
+        2: "St. Patrick",
+        3: "Easter",
+        9: "Halloween",
+        11: "Christmas"
+      }[new Date().getMonth()];
+      const seasonal = library.groups.find((group) => group.name === seasonalName);
+      return seasonal ? seasonal.id : "all";
+    }
+
+    function ensureFilter() {
+      if (selectedFilter == null) selectedFilter = initialFilter();
+      if (selectedFilter !== "all" && selectedFilter !== "ungrouped" &&
+          !library.groups.some((group) => group.id === selectedFilter)) {
+        selectedFilter = "all";
+      }
+    }
+
+    function countFor(filterId) {
+      const items = collectItems();
+      if (filterId === "all") return items.length;
+      if (filterId === "ungrouped") return items.filter((item) => !groupOf(item)).length;
+      return items.filter((item) => groupOf(item) && groupOf(item).id === filterId).length;
+    }
+
+    function renderChips() {
+      ensureFilter();
+      const parts = [];
+      parts.push(chipHtml("all", "All", countFor("all")));
+      for (const group of library.groups) {
+        parts.push(chipHtml(group.id, group.name, countFor(group.id), group.color));
+      }
+      const ungrouped = countFor("ungrouped");
+      if (ungrouped) parts.push(chipHtml("ungrouped", "Ungrouped", ungrouped));
+      parts.push('<button class="chip add" id="add-group" type="button">+ Group</button>');
+      chipsEl.innerHTML = parts.join("");
+      const active = chipsEl.querySelector(".chip.active");
+      if (active) chipsEl.scrollLeft = Math.max(0, active.offsetLeft - 12);
+    }
+
+    function chipHtml(id, name, count, color) {
+      const active = id === selectedFilter ? " active" : "";
+      const dot = color ? '<span class="dot" style="background:' + esc(color) + '"></span>' : "";
+      return '<button class="chip' + active + '" type="button" data-filter="' + esc(id) + '">' +
+        dot + esc(name) + " " + count + "</button>";
+    }
+
+    function visibleGroups() {
+      const items = collectItems().filter(matchesSearch);
+      if (selectedFilter === "all") {
+        const sections = library.groups.map((group) => ({
+          title: group.name,
+          items: items.filter((item) => groupOf(item) && groupOf(item).id === group.id)
+        })).filter((section) => section.items.length);
+        const loose = items.filter((item) => !groupOf(item));
+        if (loose.length) sections.push({ title: "Ungrouped", items: loose });
+        return sections;
+      }
+      if (selectedFilter === "ungrouped") {
+        return [{ title: "Ungrouped", items: items.filter((item) => !groupOf(item)) }];
+      }
+      const group = library.groups.find((entry) => entry.id === selectedFilter);
+      const title = group ? group.name : "Group";
+      return [{ title, items: items.filter((item) => groupOf(item) && groupOf(item).id === selectedFilter) }];
+    }
+
+    function cardHtml(item) {
+      const live = isLive(item);
+      const swatches = colorsFrom(item.raw).map((color) => '<span class="swatch" style="background:rgb(' + color + ')"></span>').join("");
+      const segs = activeSegs(item.raw);
+      const bits = [];
+      const fx = effectSummary(item.raw);
+      const palette = paletteSummary(item.raw);
+      if (segs.length > 1) bits.push(segs.length + " segments");
+      if (fx) bits.push(fx);
+      if (palette) bits.push(palette);
+      bits.push(item.source === "controller" ? "slot " + item.slot : "on this page");
+      const options = ['<option value="">Ungrouped</option>'].concat(library.groups.map((group) => {
+        const current = groupOf(item);
+        const selected = current && current.id === group.id ? " selected" : "";
+        return '<option value="' + esc(group.id) + '"' + selected + '>' + esc(group.name) + "</option>";
+      }));
+      return '<article class="card' + (live ? " live" : "") + '" data-key="' + esc(item.key) + '">' +
+        '<button class="apply" type="button">' +
+          '<span class="swatches">' + swatches + "</span>" +
+          '<span class="name">' + esc(item.name) + "</span>" +
+          '<span class="meta">' + esc(bits.join(" · ")) + "</span>" +
+          (live ? '<span class="flag">Showing now</span>' : "") +
+        "</button>" +
+        '<div class="card-side">' +
+          '<label class="assign">Group' +
+            '<select class="group-select" aria-label="Group for ' + esc(item.name) + '">' + options.join("") + "</select>" +
+          "</label>" +
+          '<div class="icon-row">' +
+            '<button class="save-preset" type="button" title="Save the current lights into this preset" aria-label="Save the current lights into ' + esc(item.name) + '">' +
+              '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v10M8 9l4 4 4-4M5 15v4h14v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>' +
+            "</button>" +
+            '<button class="copy-preset" type="button" aria-label="Copy ' + esc(item.name) + '">' +
+              '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2"></rect><path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" fill="none" stroke="currentColor" stroke-width="2"></path></svg>' +
+            "</button>" +
+            '<button class="delete-preset" type="button" aria-label="Delete ' + esc(item.name) + '">' +
+              '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V5h6v2M7 7l1 13h8l1-13" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"></path></svg>' +
+            "</button>" +
+          "</div>" +
+        "</div>" +
+      "</article>";
+    }
+
+    function renderList() {
+      if (!library) return;
+      ensureFilter();
+      const y = window.scrollY;
+      const sections = visibleGroups();
+      const total = sections.reduce((sum, section) => sum + section.items.length, 0);
+      const group = library.groups.find((entry) => entry.id === selectedFilter);
+      const title = selectedFilter === "all" ? "All presets" : (group ? group.name : (sections[0] ? sections[0].title : "Presets"));
+      headingEl.textContent = title + " · " + total;
+      if (!total) {
+        listEl.innerHTML = '<p class="empty">' + (searchEl.value.trim()
+          ? "Nothing in this group matches that search."
+          : (group
+            ? "No presets in " + esc(group.name) + " yet. Choose All, then set a preset’s group."
+            : "No presets in this view.")) + "</p>";
+      } else if (selectedFilter === "all") {
+        listEl.innerHTML = sections.map((section) =>
+          '<div class="section-label">' + esc(section.title) + "</div>" + section.items.map(cardHtml).join("")
+        ).join("");
+      } else {
+        listEl.innerHTML = sections[0].items.map(cardHtml).join("");
+      }
+      window.scrollTo(0, y);
+    }
+
+    function isLive(item) {
+      if (item.source === "controller") return item.slot === currentPs;
+      return pageLiveKey === item.key && !(currentPs > 0);
+    }
+
+    function markLive() {
+      const items = collectItems();
+      for (const card of listEl.querySelectorAll(".card")) {
+        const item = items.find((entry) => entry.key === card.dataset.key);
+        const live = item ? isLive(item) : false;
+        card.classList.toggle("live", live);
+        const flag = card.querySelector(".flag");
+        if (live && !flag) {
+          const span = document.createElement("span");
+          span.className = "flag";
+          span.textContent = "Showing now";
+          card.querySelector(".apply").appendChild(span);
+        } else if (!live && flag) {
+          flag.remove();
+        }
+      }
+    }
+
+    async function applyItem(key, card) {
+      const item = collectItems().find((entry) => entry.key === key);
+      if (!item) return;
+      setStatus("Applying " + item.name + "…");
+      card.classList.remove("success", "error");
+      const payload = item.source === "controller" ? { ps: item.slot } : item.raw;
+      try {
+        const res = await fetch(host() + "/json/state", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || body.success === false) throw new Error("HTTP " + res.status);
+        if (item.source === "controller") {
+          currentPs = item.slot;
+          pageLiveKey = null;
+        } else {
+          currentPs = -1;
+          pageLiveKey = item.key;
+        }
+        setStatus("Showing " + item.name + " on the house.", "ok");
+        card.classList.add("success");
+        markLive();
+        setTimeout(() => card.classList.remove("success"), 1200);
+      } catch (err) {
+        setStatus("Could not apply " + item.name + ". Check the IP and that this page is served over http.", "err");
+        card.classList.add("error");
+      }
+    }
+
+    function snapshotState(raw) {
+      const look = {};
+      if (!raw || typeof raw !== "object") return look;
+      if (typeof raw.on === "boolean") look.on = raw.on;
+      if (typeof raw.bri === "number") look.bri = raw.bri;
+      if (typeof raw.transition === "number") look.transition = raw.transition;
+      if (typeof raw.mainseg === "number") look.mainseg = raw.mainseg;
+      if (Array.isArray(raw.seg)) look.seg = JSON.parse(JSON.stringify(raw.seg));
+      if (raw.playlist && typeof raw.playlist === "object") look.playlist = JSON.parse(JSON.stringify(raw.playlist));
+      if (typeof raw.win === "string") look.win = raw.win;
+      return look;
+    }
+
+    function uniqueLookName(name) {
+      const taken = new Set(collectItems().map((item) => item.name.toLowerCase()));
+      let candidate = name;
+      let n = 2;
+      while (taken.has(candidate.toLowerCase())) {
+        candidate = name + " " + n;
+        n += 1;
+      }
+      return candidate;
+    }
+
+    function storePageLook(name, groupId, raw, existingKey, markLive) {
+      let key = existingKey;
+      const look = key ? library.looks.find((entry) => entry.key === key) : null;
+      if (look) {
+        look.name = name;
+        look.raw = raw;
+      } else {
+        key = "page:look-" + Date.now();
+        library.looks.push({ key, name, raw });
+      }
+      library.assignments[key] = groupId;
+      if (markLive && !(currentPs > 0)) {
+        currentPs = -1;
+        pageLiveKey = key;
+      }
+      saveLibrary();
+      selectedFilter = groupId;
+      localStorage.setItem(FILTER_KEY, groupId);
+      renderChips();
+      renderList();
+    }
+
+    function addLook(name, groupId, raw) {
+      storePageLook(name, groupId, raw, null, false);
+      const group = library.groups.find((entry) => entry.id === groupId);
+      setStatus("Saved " + name + " in " + (group ? group.name : "the group") + ". It stays on this page, not in a controller slot.", "ok");
+    }
+
+    function targetLabel(item) {
+      const group = groupOf(item);
+      const where = item.source === "controller" ? "slot " + item.slot : "on this page";
+      return item.name + " · " + where + (group ? " · " + group.name : "");
+    }
+
+    function fillLookTargets(selectedKey) {
+      const select = lookForm.elements.lookTarget;
+      const items = collectItems().slice().sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.key.localeCompare(b.key)
+      );
+      const baseLabels = items.map(targetLabel);
+      const counts = new Map();
+      for (const label of baseLabels) counts.set(label, (counts.get(label) || 0) + 1);
+      const seen = new Map();
+      select.innerHTML = '<option value="">New preset</option>' + items.map((item, index) => {
+        let label = baseLabels[index];
+        if (counts.get(label) > 1) {
+          const n = (seen.get(label) || 0) + 1;
+          seen.set(label, n);
+          const fx = effectSummary(item.raw);
+          label += " (" + n + (fx ? ", " + fx : "") + ")";
+        }
+        return '<option value="' + esc(item.key) + '">' + esc(label) + "</option>";
+      }).join("");
+      select.value = selectedKey && items.some((item) => item.key === selectedKey) ? selectedKey : "";
+    }
+
+    function describeTarget(item) {
+      if (!item) return "Saves the lights as they are now as a new preset on this page. It does not use a controller slot. Pick a preset under Save into to replace that one instead.";
+      if (item.source === "controller") {
+        let text = "Replaces " + item.name + " in slot " + item.slot + " with the lights showing now. The lights keep playing.";
+        if (item.slot === 3) text += " Slot 3 is the preset the controller loads at boot.";
+        return text;
+      }
+      if (item.saved) return "Replaces " + item.name + " with the lights showing now. It stays on this page.";
+      return "Replaces the page preset " + item.name + ". That original goes away, and the lights showing now take its place on this page.";
+    }
+
+    function setLookSaveLabel(replacing) {
+      document.getElementById("look-save").textContent = replacing ? "Replace" : "Save";
+    }
+
+    function applyLookTarget(key, fillFields) {
+      const item = key ? collectItems().find((entry) => entry.key === key) : null;
+      lookForm.elements.lookTarget.value = item ? item.key : "";
+      document.getElementById("look-note").textContent = describeTarget(item);
+      setLookSaveLabel(!!item);
+      if (!fillFields) return;
+      if (item) {
+        lookForm.elements.lookName.value = item.name;
+        const group = groupOf(item);
+        const preferred = group ? group.id : (selectedFilter !== "all" && selectedFilter !== "ungrouped" ? selectedFilter : library.groups[0].id);
+        if (library.groups.some((entry) => entry.id === preferred)) lookForm.elements.lookGroup.value = preferred;
+      } else {
+        const current = collectItems().find((entry) => entry.source === "controller" && entry.slot === currentPs);
+        lookForm.elements.lookName.value = uniqueLookName(current ? current.name + " look" : "Saved look");
+      }
+    }
+
+    function confirmReplace(item) {
+      if (item.source === "controller") {
+        let message = "Replace " + item.name + " in slot " + item.slot + " with the lights showing now? This overwrites that slot on the controller. The lights keep playing.";
+        if (item.slot === 3) message += " Slot 3 is the preset the controller loads at boot.";
+        return confirm(message);
+      }
+      if (!item.saved) {
+        return confirm("Replace " + item.name + "? The original page preset goes away, and the lights showing now are saved on this page in its place.");
+      }
+      return confirm("Replace " + item.name + " with the lights showing now?");
+    }
+
+    function presetCaptures(saved, snap) {
+      if (!saved || !snap) return false;
+      if (typeof snap.on === "boolean" && typeof saved.on === "boolean" && saved.on !== snap.on) return false;
+      if (typeof snap.bri === "number" && typeof saved.bri === "number" && saved.bri !== snap.bri) return false;
+      const liveSegs = Array.isArray(snap.seg) ? snap.seg : [];
+      const savedSegs = Array.isArray(saved.seg) ? saved.seg : [];
+      if (!liveSegs.length || liveSegs.length !== savedSegs.length) return false;
+      for (let i = 0; i < liveSegs.length; i++) {
+        const live = liveSegs[i];
+        const stored = savedSegs[i];
+        if (live.fx !== stored.fx) return false;
+        if (typeof live.sx === "number" && live.sx !== stored.sx) return false;
+        if (typeof live.pal === "number" && live.pal !== 0 && stored.pal !== live.pal) return false;
+        if (live.col && JSON.stringify(live.col) !== JSON.stringify(stored.col || null)) return false;
+      }
+      return true;
+    }
+
+    async function saveControllerSlot(item, name, snap) {
+      const slot = String(item.slot);
+      const before = JSON.stringify(devicePresets[slot] || null);
+      const res = await fetch(host() + "/json/state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ psave: item.slot, n: name, ib: true, sb: true })
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || body.success === false) throw new Error("The controller did not accept the save.");
+      const deadline = Date.now() + 5000;
+      let latest = null;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        const check = await fetch(host() + "/presets.json?t=" + Date.now(), { cache: "no-store" });
+        if (!check.ok) continue;
+        try {
+          latest = await check.json();
+        } catch (err) {
+          continue;
+        }
+        const saved = latest[slot];
+        if (saved && saved.n === name && (JSON.stringify(saved) !== before || presetCaptures(saved, snap))) {
+          devicePresets = latest;
+          return;
+        }
+      }
+      throw new Error("The controller did not finish saving slot " + item.slot + ".");
+    }
+
+    let lookMode = "copy";
+    let lookSourceKey = null;
+    const lookDialog = document.getElementById("look-dialog");
+    const lookForm = document.getElementById("look-form");
+
+    function fillLookGroups(preferredId) {
+      const select = lookForm.elements.lookGroup;
+      select.innerHTML = library.groups.map((group) =>
+        '<option value="' + esc(group.id) + '">' + esc(group.name) + "</option>"
+      ).join("");
+      if (preferredId && library.groups.some((group) => group.id === preferredId)) select.value = preferredId;
+    }
+
+    function openLookDialog(mode, sourceKey) {
+      if (!library || !library.groups.length) {
+        setStatus("Create a group first, then save the look there.", "err");
+        openGroups();
+        return;
+      }
+      lookMode = mode;
+      lookSourceKey = sourceKey || null;
+      const title = document.getElementById("look-title");
+      const targetWrap = document.getElementById("look-target-wrap");
+      if (mode === "save") {
+        title.textContent = "Save Preview";
+        targetWrap.hidden = false;
+        fillLookTargets(sourceKey);
+        fillLookGroups(selectedFilter !== "all" && selectedFilter !== "ungrouped" ? selectedFilter : library.groups[0].id);
+        applyLookTarget(lookForm.elements.lookTarget.value, true);
+      } else {
+        const item = collectItems().find((entry) => entry.key === sourceKey);
+        if (!item) return;
+        title.textContent = "Copy preset";
+        targetWrap.hidden = true;
+        setLookSaveLabel(false);
+        document.getElementById("look-note").textContent = "Makes a copy of " + item.name + " in the group you choose. The original stays put.";
+        lookForm.elements.lookName.value = uniqueLookName(item.name + " copy");
+        const currentGroup = groupOf(item);
+        const other = library.groups.find((group) => !currentGroup || group.id !== currentGroup.id);
+        const preferred = selectedFilter !== "all" && selectedFilter !== "ungrouped" && (!currentGroup || selectedFilter !== currentGroup.id)
+          ? selectedFilter
+          : (other ? other.id : library.groups[0].id);
+        fillLookGroups(preferred);
+      }
+      if (!lookDialog.open) lookDialog.showModal();
+      lookForm.elements.lookName.focus();
+      lookForm.elements.lookName.select();
+    }
+
+    async function deleteItem(key) {
+      const item = collectItems().find((entry) => entry.key === key);
+      if (!item || !library) return;
+      const onDevice = item.source === "controller";
+      let message = "Delete " + item.name + "?";
+      if (onDevice) {
+        message += " This removes slot " + item.slot + " from the controller. The lights stay as they are.";
+        if (item.slot === 3) message += " Slot 3 is the preset the controller loads at boot.";
+      } else {
+        message += " This removes it from this page and from your groups.";
+      }
+      if (!confirm(message)) return;
+      try {
+        if (onDevice) {
+          const res = await fetch(host() + "/json/state", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pdel: item.slot })
+          });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok || body.success === false) throw new Error("HTTP " + res.status);
+          const check = await fetch(host() + "/presets.json?t=" + Date.now(), { cache: "no-store" });
+          if (!check.ok) throw new Error("Could not confirm the delete");
+          devicePresets = await check.json();
+          if (devicePresets[String(item.slot)]) throw new Error("The preset is still on the controller");
+          if (typeof body.ps === "number") currentPs = body.ps;
+          else if (currentPs === item.slot) currentPs = -1;
+        } else if (item.saved) {
+          library.looks = library.looks.filter((look) => look.key !== key);
+        } else {
+          if (!library.hidden.includes(key)) library.hidden.push(key);
+        }
+        delete library.assignments[key];
+        if (pageLiveKey === key) pageLiveKey = null;
+        await saveLibrary(true);
+        renderChips();
+        renderList();
+        setStatus("Deleted " + item.name + ".", "ok");
+      } catch (err) {
+        setStatus("Could not delete " + item.name + ".", "err");
+      }
+    }
+
+    function assignItem(key, groupId) {
+      const item = collectItems().find((entry) => entry.key === key);
+      if (!item) return;
+      if (groupId) library.assignments[item.key] = groupId;
+      else delete library.assignments[item.key];
+      saveLibrary();
+      const group = library.groups.find((entry) => entry.id === groupId);
+      setStatus(group ? "Filed " + item.name + " under " + group.name + "." : "Removed " + item.name + " from its group.", "ok");
+      renderChips();
+      renderList();
+    }
+
+    function openGroups() {
+      renderGroupEditor();
+      if (!dialog.open) dialog.showModal();
+      dialog.querySelector("input[name=name]").focus();
+    }
+
+    function renderGroupEditor() {
+      editorEl.innerHTML = "";
+      if (!library.groups.length) {
+        editorEl.innerHTML = '<p class="empty">No groups yet.</p>';
+        return;
+      }
+      for (const group of library.groups) {
+        const row = document.createElement("div");
+        row.className = "group-row";
+        const color = document.createElement("input");
+        color.type = "color";
+        color.value = group.color || "#ff8c00";
+        color.addEventListener("change", () => {
+          group.color = color.value;
+          saveLibrary();
+          renderChips();
+        });
+        const name = document.createElement("input");
+        name.type = "text";
+        name.value = group.name;
+        name.maxLength = 40;
+        name.addEventListener("change", () => {
+          const next = name.value.trim();
+          if (!next) {
+            name.value = group.name;
+            return;
+          }
+          const clash = library.groups.some((entry) => entry !== group && entry.name.toLowerCase() === next.toLowerCase());
+          if (clash) {
+            setStatus("A group named " + next + " already exists.", "err");
+            name.value = group.name;
+            return;
+          }
+          group.name = next;
+          saveLibrary();
+          renderChips();
+          renderList();
+        });
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "action";
+        remove.textContent = "Delete";
+        remove.addEventListener("click", () => {
+          if (!confirm("Delete " + group.name + "? Its presets become ungrouped.")) return;
+          library.groups = library.groups.filter((entry) => entry.id !== group.id);
+          for (const key of Object.keys(library.assignments)) {
+            if (library.assignments[key] === group.id) delete library.assignments[key];
+          }
+          if (selectedFilter === group.id) selectedFilter = "all";
+          saveLibrary();
+          renderGroupEditor();
+          renderChips();
+          renderList();
+        });
+        row.append(color, name, remove);
+        editorEl.appendChild(row);
+      }
+    }
+
+    async function reload() {
+      setStatus("Loading presets…");
+      const base = host();
+      try {
+        const infoRes = await fetch(base + "/json/info", { cache: "no-store" });
+        if (!infoRes.ok) throw new Error("HTTP " + infoRes.status);
+        const info = await infoRes.json();
+        const [presetRes, effectRes, paletteRes, stateRes] = await Promise.all([
+          fetch(base + "/presets.json", { cache: "no-store" }),
+          fetch(base + "/json/eff", { cache: "no-store" }),
+          fetch(base + "/json/pal", { cache: "no-store" }),
+          fetch(base + "/json/state", { cache: "no-store" })
+        ]);
+        if (!presetRes.ok) throw new Error("Could not read presets");
+        devicePresets = await presetRes.json();
+        effectNames = effectRes.ok ? await effectRes.json() : [];
+        paletteNames = paletteRes.ok ? await paletteRes.json() : [];
+        if (stateRes.ok) {
+          const state = await stateRes.json();
+          if (typeof state.ps === "number") currentPs = state.ps;
+        }
+        library = await loadLibrary(collectItems());
+        renderChips();
+        renderList();
+        connectPeek();
+        const count = collectItems().filter((item) => item.source === "controller").length;
+        setStatus("Connected to " + (info.name || "WLED") + ". " + count + " presets on the controller, " + (info.leds && info.leds.count != null ? info.leds.count : "?") + " LEDs.", "ok");
+      } catch (err) {
+        devicePresets = {};
+        library = library || await loadLibrary(collectItems());
+        renderChips();
+        renderList();
+        setStatus("Cannot reach the controller at " + base + ". Page presets are still listed.", "err");
+      }
+    }
+
+    async function backupPresets() {
+      try {
+        const res = await fetch(host() + "/presets.json", { cache: "no-store" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const blob = await res.blob();
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "presets.json";
+        link.click();
+        URL.revokeObjectURL(link.href);
+        setStatus("Downloaded the controller’s presets.json.", "ok");
+      } catch (err) {
+        setStatus("Could not download presets from the controller.", "err");
+      }
+    }
+
+    function drawRow(canvas, colors, start, count) {
+      const dpr = window.devicePixelRatio || 1;
+      const width = canvas.clientWidth || 600;
+      const height = canvas.clientHeight || 28;
+      const pixelW = Math.floor(width * dpr);
+      const pixelH = Math.floor(height * dpr);
+      if (canvas.width !== pixelW || canvas.height !== pixelH) {
+        canvas.width = pixelW;
+        canvas.height = pixelH;
+      }
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, width, height);
+      if (!colors) return;
+      const ledW = width / count;
+      for (let i = 0; i < count; i += 1) {
+        const offset = (start + i) * 3;
+        if (offset + 2 >= colors.length) break;
+        const x0 = Math.floor(i * ledW);
+        const x1 = i === count - 1 ? width : Math.floor((i + 1) * ledW);
+        ctx.fillStyle = "rgb(" + colors[offset] + "," + colors[offset + 1] + "," + colors[offset + 2] + ")";
+        ctx.fillRect(x0, 0, Math.max(1, x1 - x0), height);
+      }
+    }
+
+    function housePoint(seg, index) {
+      const t = seg.count <= 1 ? 0 : index / (seg.count - 1);
+      const along = 1 - t;
+      const worldX = seg.x + (seg.nudgeX || 0) + seg.x2 * along;
+      const worldY = seg.y + (seg.nudgeY || 0) + seg.y2 * along;
+      return { x: worldX / 1280, y: (720 - worldY) / 720 };
+    }
+
+    function drawHouse(colors) {
+      if (houseFrame.hidden || diagramImg.hidden || !diagramImg.naturalWidth) return;
+      const dpr = window.devicePixelRatio || 1;
+      const width = diagramImg.clientWidth;
+      const height = diagramImg.clientHeight;
+      if (!width || !height) return;
+      const pixelW = Math.floor(width * dpr);
+      const pixelH = Math.floor(height * dpr);
+      if (houseCanvas.width !== pixelW || houseCanvas.height !== pixelH) {
+        houseCanvas.width = pixelW;
+        houseCanvas.height = pixelH;
+      }
+      const ctx = houseCanvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      if (!colors) return;
+      const radius = Math.max(0.85, width * 0.0021);
+      for (const seg of HOUSE_SEGMENTS) {
+        for (let i = 0; i < seg.count; i += 1) {
+          const offset = (seg.led + i) * 3;
+          if (offset + 2 >= colors.length) return;
+          const red = colors[offset];
+          const green = colors[offset + 1];
+          const blue = colors[offset + 2];
+          if (red + green + blue < 18) continue;
+          const point = housePoint(seg, i);
+          ctx.beginPath();
+          ctx.fillStyle = "rgb(" + red + "," + green + "," + blue + ")";
+          ctx.arc(point.x * width, point.y * height, radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    function drawPeek() {
+      const colors = latestColors;
+      drawHouse(colors);
+      drawRow(peekTop, colors, 0, 719);
+    }
+
+    function connectPeek() {
+      const ip = host().replace(/^http:\/\//, "").replace(/^https:\/\//, "");
+      if (ws && wsIp === ip && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+      wsClosedByUs = true;
+      if (ws) ws.close();
+      wsClosedByUs = false;
+      wsIp = ip;
+      clearTimeout(reconnectTimer);
+      let socket;
+      try {
+        socket = new WebSocket("ws://" + ip + "/ws");
+      } catch (err) {
+        return;
+      }
+      ws = socket;
+      socket.binaryType = "arraybuffer";
+      socket.onopen = () => {
+        if (peekWanted && !document.hidden) socket.send(JSON.stringify({ lv: true }));
+      };
+      socket.onmessage = (event) => {
+        if (typeof event.data === "string") {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.state && typeof msg.state.ps === "number") {
+              currentPs = msg.state.ps;
+              if (currentPs > 0) pageLiveKey = null;
+              markLive();
+            }
+          } catch (err) { /* ignore non-json text */ }
+          return;
+        }
+        const bytes = new Uint8Array(event.data);
+        if (bytes.length < 3 || bytes[0] !== 76 || bytes[1] !== 1) return;
+        latestColors = bytes.slice(2);
+        if (peekWanted) drawPeek();
+      };
+      socket.onclose = () => {
+        if (ws !== socket || wsClosedByUs) return;
+        reconnectTimer = setTimeout(connectPeek, 2000);
+      };
+    }
+
+    function setHouse(visible) {
+      houseFrame.hidden = !visible;
+      document.getElementById("house-toggle").textContent = visible ? "Hide house" : "Show house";
+      localStorage.setItem("wledHouse.showHouse", visible ? "1" : "0");
+      if (visible) drawPeek();
+    }
+
+    function setPeek(enabled) {
+      peekWanted = enabled;
+      document.getElementById("peek-toggle").textContent = enabled ? "Pause" : "Resume";
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ lv: enabled && !document.hidden }));
+      if (!enabled) {
+        latestColors = null;
+        drawPeek();
+      }
+    }
+
+    diagramImg.addEventListener("load", () => {
+      diagramImg.hidden = false;
+      drawPeek();
+    });
+    diagramImg.addEventListener("error", () => {
+      diagramImg.hidden = true;
+      const ctx = houseCanvas.getContext("2d");
+      ctx.clearRect(0, 0, houseCanvas.width, houseCanvas.height);
+    });
+
+    ipInput.addEventListener("change", () => {
+      localStorage.setItem("wledIp", ipInput.value.trim());
+      reload();
+    });
+    document.getElementById("test").addEventListener("click", reload);
+    document.getElementById("reload").addEventListener("click", reload);
+    document.getElementById("backup").addEventListener("click", backupPresets);
+    document.getElementById("peek-toggle").addEventListener("click", () => setPeek(!peekWanted));
+    document.getElementById("house-toggle").addEventListener("click", () => setHouse(houseFrame.hidden));
+    searchEl.addEventListener("input", renderList);
+    chipsEl.addEventListener("click", (event) => {
+      if (event.target.closest("#add-group")) {
+        openGroups();
+        return;
+      }
+      const chip = event.target.closest("[data-filter]");
+      if (!chip) return;
+      selectedFilter = chip.dataset.filter;
+      localStorage.setItem(FILTER_KEY, selectedFilter);
+      renderChips();
+      renderList();
+    });
+    listEl.addEventListener("click", (event) => {
+      const card = event.target.closest(".card");
+      if (!card) return;
+      if (event.target.closest(".save-preset")) {
+        openLookDialog("save", card.dataset.key);
+        return;
+      }
+      if (event.target.closest(".copy-preset")) {
+        openLookDialog("copy", card.dataset.key);
+        return;
+      }
+      if (event.target.closest(".delete-preset")) {
+        deleteItem(card.dataset.key);
+        return;
+      }
+      const button = event.target.closest(".apply");
+      if (!button) return;
+      applyItem(card.dataset.key, card);
+    });
+    document.getElementById("save-look").addEventListener("click", () => openLookDialog("save"));
+    document.getElementById("look-cancel").addEventListener("click", () => lookDialog.close());
+    lookForm.elements.lookTarget.addEventListener("change", () => {
+      if (lookMode !== "save") return;
+      applyLookTarget(lookForm.elements.lookTarget.value, true);
+      lookForm.elements.lookName.focus();
+      lookForm.elements.lookName.select();
+    });
+    lookForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const name = lookForm.elements.lookName.value.trim();
+      const groupId = lookForm.elements.lookGroup.value;
+      if (!name || !groupId) return;
+      if (lookMode === "copy") {
+        const item = collectItems().find((entry) => entry.key === lookSourceKey);
+        if (!item) return;
+        addLook(name, groupId, snapshotState(item.raw));
+        lookDialog.close();
+        return;
+      }
+      const note = document.getElementById("look-note");
+      let target = null;
+      const picked = lookForm.elements.lookTarget.value;
+      if (picked) {
+        target = collectItems().find((entry) => entry.key === picked);
+        if (!target) {
+          note.textContent = "That preset is no longer in the list. Reload and try again.";
+          setStatus(note.textContent, "err");
+          return;
+        }
+      } else {
+        const matches = collectItems().filter((entry) => entry.name.toLowerCase() === name.toLowerCase());
+        if (matches.length > 1) {
+          note.textContent = "More than one preset is named " + name + ". Pick the one you want from Save into.";
+          setStatus(note.textContent, "err");
+          return;
+        }
+        if (matches.length === 1) target = matches[0];
+      }
+      if (target && target.source === "controller" && name.length > 32) {
+        note.textContent = "Controller preset names can be 32 characters. Shorten the name, or save it as a new preset on this page.";
+        setStatus(note.textContent, "err");
+        return;
+      }
+      if (target && !confirmReplace(target)) return;
+      lookDialog.close();
+      setStatus("Reading the lights…");
+      try {
+        const res = await fetch(host() + "/json/state", { cache: "no-store" });
+        if (!res.ok) throw new Error("Could not read the current lights.");
+        const state = await res.json();
+        if (typeof state.ps === "number") currentPs = state.ps;
+        const raw = snapshotState(state);
+        if (!target) {
+          addLook(name, groupId, raw);
+          return;
+        }
+        if (target.source === "controller") {
+          await saveControllerSlot(target, name, raw);
+          library.assignments[target.key] = groupId;
+          currentPs = target.slot;
+          pageLiveKey = null;
+          await saveLibrary(true);
+          selectedFilter = groupId;
+          localStorage.setItem(FILTER_KEY, groupId);
+          renderChips();
+          renderList();
+          const group = library.groups.find((entry) => entry.id === groupId);
+          setStatus("Replaced slot " + target.slot + ", " + name + (group ? ", in " + group.name : "") + ". The lights keep playing.", "ok");
+          return;
+        }
+        if (!target.saved) {
+          if (!library.hidden.includes(target.key)) library.hidden.push(target.key);
+          delete library.assignments[target.key];
+          if (pageLiveKey === target.key) pageLiveKey = null;
+          storePageLook(name, groupId, raw, null, true);
+          setStatus("Replaced " + target.name + ". The new copy stays on this page.", "ok");
+          return;
+        }
+        storePageLook(name, groupId, raw, target.key, true);
+        setStatus("Updated " + name + ". It stays on this page.", "ok");
+      } catch (err) {
+        setStatus((err && err.message) || "Could not save the current lights.", "err");
+      }
+    });
+    listEl.addEventListener("change", (event) => {
+      const select = event.target.closest(".group-select");
+      if (!select) return;
+      assignItem(select.closest(".card").dataset.key, select.value);
+    });
+    document.getElementById("new-group").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const name = form.name.value.trim();
+      if (!name) return;
+      if (library.groups.some((group) => group.name.toLowerCase() === name.toLowerCase())) {
+        setStatus("A group named " + name + " already exists.", "err");
+        return;
+      }
+      const id = slug(library, name);
+      library.groups.push({ id, name, color: form.color.value || NEW_COLORS[library.groups.length % NEW_COLORS.length] });
+      form.name.value = "";
+      saveLibrary();
+      selectedFilter = id;
+      localStorage.setItem(FILTER_KEY, id);
+      renderGroupEditor();
+      renderChips();
+      renderList();
+      setStatus("Created " + name + ". Assign presets from All, or from each preset’s group menu.", "ok");
+    });
+    document.getElementById("close-groups").addEventListener("click", () => dialog.close());
+    document.addEventListener("visibilitychange", () => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ lv: peekWanted && !document.hidden }));
+    });
+    window.addEventListener("resize", drawPeek);
+
+    const savedIp = localStorage.getItem("wledIp");
+    if (savedIp) ipInput.value = savedIp;
+    if (localStorage.getItem("wledHouse.showHouse") === "0") setHouse(false);
+    reload();
+  </script>
+</body>
+</html>
