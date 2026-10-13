@@ -47,7 +47,10 @@
     }
     .sync { color: #888; background: transparent; padding: 0; margin: 4px 0 0; min-height: 0; }
     .status.ok { color: #7dcca2; }
-    .status.err { color: #ff8b80; }
+    .status.err, .sync.err { color: #ff8b80; }
+    .host-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+    .host-row .sync { margin: 0; flex: 1; min-width: 180px; }
+    .host-row a { color: #9ecbff; }
     .peek {
       margin: 14px 0 8px;
       padding: 12px;
@@ -215,6 +218,10 @@
   </div>
   <div id="status" class="status" aria-live="polite">Loading presets…</div>
   <p id="sync" class="sync"></p>
+  <div class="host-row">
+    <p id="host-status" class="sync"></p>
+    <button class="action" id="upload-page" type="button" hidden>Upload page</button>
+  </div>
 
   <section class="peek" aria-label="Live roof preview">
     <div class="peek-head">
@@ -566,6 +573,126 @@
         syncEl.textContent = "Saved on the controller.";
       } catch (err) {
         syncEl.textContent = "Saved in this browser. The controller copy did not update.";
+      }
+    }
+
+    const PAGE_FILE = "wled-holiday-presets.html";
+    const IMAGE_FILE = "MyHouse.JPG";
+
+    function setHostStatus(message, kind, link) {
+      const el = document.getElementById("host-status");
+      el.className = "sync" + (kind ? " " + kind : "");
+      el.replaceChildren();
+      if (!message) return;
+      el.append(document.createTextNode(message));
+      if (!link) return;
+      el.append(" ");
+      const anchor = document.createElement("a");
+      anchor.href = link;
+      anchor.textContent = link;
+      el.append(anchor);
+    }
+
+    function bytesEqual(left, right) {
+      if (!left || !right || left.byteLength !== right.byteLength) return false;
+      const a = new Uint8Array(left);
+      const b = new Uint8Array(right);
+      for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+      return true;
+    }
+
+    function isOurPage(buf) {
+      const text = new TextDecoder().decode(buf.slice(0, 2500));
+      return text.includes("<title>WLED House Lights</title>");
+    }
+
+    function isJpeg(buf) {
+      const bytes = new Uint8Array(buf);
+      return bytes.length > 3 && bytes[0] === 0xff && bytes[1] === 0xd8;
+    }
+
+    async function localBlob(name) {
+      const res = await fetch(new URL(name, location.href), { cache: "no-store" });
+      if (!res.ok) throw new Error("Could not read " + name + " from this page.");
+      return await res.blob();
+    }
+
+    async function readControllerFile(name) {
+      const res = await fetch(host() + "/" + name + "?t=" + Date.now(), { cache: "no-store" });
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return await res.arrayBuffer();
+    }
+
+    async function uploadNamedFile(name, blob) {
+      const body = new FormData();
+      body.append("data", blob, name);
+      const res = await fetch(host() + "/upload", { method: "POST", body });
+      const text = await res.text();
+      if (!res.ok || !/uploaded/i.test(text)) throw new Error((text || "").trim() || "The controller did not accept " + name + ".");
+    }
+
+    async function checkPageHost() {
+      const button = document.getElementById("upload-page");
+      button.hidden = true;
+      button.disabled = false;
+      setHostStatus("Checking the controller…");
+      try {
+        const remotePage = await readControllerFile(PAGE_FILE);
+        const remoteImage = await readControllerFile(IMAGE_FILE);
+        const pageThere = !!(remotePage && isOurPage(remotePage));
+        const imageThere = !!(remoteImage && isJpeg(remoteImage));
+        let localPage = null;
+        let localImage = null;
+        try {
+          localPage = await (await localBlob(PAGE_FILE)).arrayBuffer();
+          localImage = await (await localBlob(IMAGE_FILE)).arrayBuffer();
+        } catch (err) {
+          localPage = null;
+          localImage = null;
+        }
+        const link = host() + "/" + PAGE_FILE;
+        const pageSame = pageThere && localPage && bytesEqual(localPage, remotePage);
+        const imageSame = imageThere && localImage && bytesEqual(localImage, remoteImage);
+        if ((pageSame && imageSame) || (pageThere && imageThere && !localPage)) {
+          setHostStatus("This page is hosted on the controller. Open", "", link);
+          return;
+        }
+        if (!localPage) {
+          setHostStatus("This page is not on the controller. Open it from a web address on the computer to upload it.", "err");
+          return;
+        }
+        button.hidden = false;
+        if (!pageThere) {
+          button.textContent = "Upload page";
+          setHostStatus("This page is not on the controller.");
+        } else if (!imageThere) {
+          button.textContent = "Upload page";
+          setHostStatus("The page is on the controller, but the house photo is not.");
+        } else {
+          button.textContent = "Update page";
+          setHostStatus("The controller has a different copy of this page.");
+        }
+      } catch (err) {
+        button.hidden = true;
+        setHostStatus("Could not check whether this page is on the controller.", "err");
+      }
+    }
+
+    async function uploadPage() {
+      const button = document.getElementById("upload-page");
+      button.disabled = true;
+      setHostStatus("Uploading this page…");
+      try {
+        const pageBlob = await localBlob(PAGE_FILE);
+        const imageBlob = await localBlob(IMAGE_FILE);
+        await uploadNamedFile(PAGE_FILE, pageBlob);
+        await uploadNamedFile(IMAGE_FILE, imageBlob);
+        await checkPageHost();
+      } catch (err) {
+        button.disabled = false;
+        button.hidden = false;
+        setHostStatus((err && err.message) || "Could not upload the page.", "err");
       }
     }
 
@@ -1156,11 +1283,14 @@
         connectPeek();
         const count = collectItems().filter((item) => item.source === "controller").length;
         setStatus("Connected to " + (info.name || "WLED") + ". " + count + " presets on the controller, " + (info.leds && info.leds.count != null ? info.leds.count : "?") + " LEDs.", "ok");
+        await checkPageHost();
       } catch (err) {
         devicePresets = {};
         library = library || await loadLibrary(collectItems());
         renderChips();
         renderList();
+        document.getElementById("upload-page").hidden = true;
+        setHostStatus("");
         setStatus("Cannot reach the controller at " + base + ". Page presets are still listed.", "err");
       }
     }
@@ -1331,6 +1461,7 @@
       reload();
     });
     document.getElementById("test").addEventListener("click", reload);
+    document.getElementById("upload-page").addEventListener("click", uploadPage);
     document.getElementById("reload").addEventListener("click", reload);
     document.getElementById("backup").addEventListener("click", backupPresets);
     document.getElementById("peek-toggle").addEventListener("click", () => setPeek(!peekWanted));
